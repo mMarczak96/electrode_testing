@@ -13,7 +13,7 @@ def define_field(fields: list,width: int, height: int):
 
     return field_dict
 
-def set_field(path: str, name: str, field_dict):
+def set_field_excell(path: str, name: str, field_dict):
     
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -33,39 +33,63 @@ def calculate_field(field: np.array, function: callable):
 def butler_volmer(field_dict):
 
     F = 96485.3329 # Faraday's constant
-    E_A = 1 # Activation energy. Has to be calculated using experimental data! [J/mol]
-    A = 1 # Pre-exponetial factor in Aarhenius equation. Obtained from experiment! [1/s]
+    h = 6.62607015e-34 # Planck constant
+    k_b = 1.380649e-23 # Boltzmann constant
+    n = 1 # Number of electrons exchanged
+    E_A = 1 # Activation energy. Has to be calculated using experimental data! [J/mol]. FIND PROPER VALUE
+    kappa = 1 # Transmition coeff. Values from [0,1]. FIND PROPER VALUE
     R = 8.314 # Universal gas constant [J/mol/K]
     alpha = 0.5 # Transfer coefficient. Obtained experimentally. Values [0,1]. A value of 0.5 means that overpotenital favors anodic and cathodic reaction equaly
 
-    temp_field = field_dict['T']
-    print(temp_field[1,1])
+    i_field = np.ones(field_dict['T'].shape)
 
-    i_0 = np.ones(field_dict['T'].shape)
-
-    for i, row in enumerate(i_0):
+    for i, row in enumerate(i_field):
         for j, value in enumerate(row):
-            K_temp = value * A * np.exp(-E_A / (R * field_dict['T'][i, j]))
-            K_0 = K_temp * pow(field_dict['V_2'][i,j],1) * pow(field_dict['H'][i,j],2)
-            C_r = field_dict['V_2'][i,j]
-            C_o = field_dict['H'][i,j]
-            i_0[i,j] = F * K_0 * pow(C_r, alpha) * pow(C_o, 1- alpha)
+            E = field_dict['E'][i,j]
+            C_V_2 = field_dict['V_2'][i,j]
+            C_V_3 = field_dict['V_3'][i,j]
+            C_VO_2 = field_dict['VO_2'][i,j]
+            C_VO_0 = field_dict['VO_0'][i,j]
+            C_H = field_dict['H'][i,j]
+            C_H2O = field_dict['H2O'][i,j]
+            T = field_dict['T'][i,j]
+            A = (k_b * T) / h  # Pre-exponetial factor in Aarhenius equation. Obtained from experiment or ny assumtion. Transmition state heory is implemented here [1/s]
+            K_temp = A * np.exp(-E_A / (R * T))
+            electrode_type_list = ['positive', 'negative', 'merged']
+            electrode_type = electrode_type_list[0]
+            if  electrode_type == 'positive':
+                E_0 = 1
+                K_0 = K_temp * pow(C_VO_0,1) * pow(C_H2O,1) #without Donnan potentail
+                i_0 = F * K_0 * pow(C_VO_0, alpha) * pow(C_VO_2, alpha)
+                i_field[i,j] = i_0 * np.exp((alpha * n * F) / (R * T) * (E - E_0))
 
-    print(i_0)
-    return i_0
+            elif electrode_type == 'negative':
+                E_0 = -0.26
+                K_0 = K_temp * pow(field_dict['V_3'][i,j],1)
+
+            elif electrode_type == 'merged':
+                E_0 = 1 - (-0.26)
+
+            else:
+                print("Wrong electrode type!!!")
+
+
+            # i_field[i,j] = F * K_0 * pow(C_r, alpha) * pow(C_o, 1- alpha)
+
+    return i_field
 
 
 if __name__ == '__main__':
 
-    fields = ['U', 'p', 'E','I', 'T', 'V_2', 'V_3', 'H']
+    fields = ['U', 'p', 'E','I', 'T', 'V_2', 'V_3', 'VO_2', 'VO_0', 'H2O', 'H']
     field_dict = define_field(fields, 5, 5)
 
     for field in fields:
-        set_field('electrode_fields.xlsx', field, field_dict)
+        set_field_excell('electrode_fields.xlsx', field, field_dict)
 
-    i_0 = butler_volmer(field_dict)
+    i_field = butler_volmer(field_dict)
 
-    plt.imshow(i_0, cmap = 'magma')
+    plt.imshow(i_field, cmap = 'magma')
     plt.title( "Current density" )
     plt.xlabel('x-axis')
     plt.ylabel('y-axis')
